@@ -1,0 +1,89 @@
+{
+  "landing": {
+    "title": "ARMAF // ISLAND HEIST // DECODE THE MISSION",
+    "subtitle": "Your mission begins. Only some will reach the vault.",
+    "cta": "ACCEPT MISSION"
+  },
+  "register": {
+    "title": "AGENT REGISTRATION",
+    "name": "Full Name",
+    "email": "Email Address",
+    "country": "Country",
+    "platform": "How did you find us?",
+    "platformOptions": {
+      "ig": "Instagram",
+      "tiktok": "TikTok",
+      "other": "Other"
+    },
+    "consent": "I consent to receive mission communications",
+    "ageGate": "I confirm I am 18 years or older",
+    "submit": "REGISTER AGENT",
+    "errors": {
+      "nameRequired": "Name is required",
+      "emailRequired": "Valid email is required",
+      "countryRequired": "Select your country",
+      "ageRequired": "You must be 18+ to proceed"
+    }
+  },
+  "briefing": {
+    "title": "CLASSIFIED BRIEFING",
+    "text": "You are now an ARMAF operative. You have limited time to decode the mission. Each puzzle solved earns Intel Tokens. Tokens unlock advantages in the real-world heist.",
+    "rooms": {
+      "cipher": "CIPHER",
+      "lock": "LOCK",
+      "coordinates": "COORDINATES",
+      "bonus": "BONUS"
+    },
+    "cta": "BEGIN MISSION"
+  },
+  "game": {
+    "timer": "TIME",
+    "tokens": "INTEL TOKENS",
+    "skip": "SKIP ROOM",
+    "skipConfirm": "Skipping costs 1 token. Continue?",
+    "roomComplete": "ROOM CLEARED",
+    "timeBonus": "TIME BONUS +1 TOKEN",
+    "nextRoom": "PROCEED"
+  },
+  "cipher": {
+    "title": "CIPHER ROOM",
+    "instructions": "Decode the encrypted message. Use the partial key to crack the cipher.",
+    "hint": "Legacy detected. The original was just the beginning.",
+    "complete": "Cipher decoded. Intel Token earned."
+  },
+  "lock": {
+    "title": "LOCK ROOM",
+    "instructions": "Memorize the pattern. Reproduce it to unlock the vault.",
+    "attemptsLeft": "Attempts remaining:",
+    "complete": "Lock opened. Intel Token earned."
+  },
+  "coordinates": {
+    "title": "COORDINATES ROOM",
+    "instructions": "Match each visual hint to the correct location.",
+    "reveal": "Your coordinates are locked. The mission comes to {country}.",
+    "complete": "Coordinates confirmed. Intel Token earned."
+  },
+  "bonus": {
+    "title": "BONUS ROOM",
+    "instructions": "Time is running out. Solve the final challenge for an extra token.",
+    "complete": "Bonus cleared. Extra Intel Token earned."
+  },
+  "complete": {
+    "title": "MISSION COMPLETE",
+    "tokensLabel": "Intel Tokens Collected",
+    "rank": "Agent Rank",
+    "coordinates": "Your Coordinates",
+    "share": "Share Your Rank",
+    "leaderboard": "View Global Leaderboard",
+    "nextDrop": "Next drop in {days} days"
+  },
+  "leaderboard": {
+    "title": "GLOBAL LEADERBOARD",
+    "rank": "Rank",
+    "agent": "Agent",
+    "tokens": "Tokens",
+    "country": "Country",
+    "filterCountry": "Filter by country",
+    "first500": "FIRST 500"
+  }
+}

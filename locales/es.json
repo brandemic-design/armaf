@@ -1,0 +1,66 @@
+{
+  "landing": {
+    "title": "ARMAF // ISLAND HEIST // DESCIFRA LA MISIÓN",
+    "subtitle": "Tu misión comienza. Solo algunos llegarán a la bóveda.",
+    "cta": "ACEPTAR MISIÓN"
+  },
+  "register": {
+    "title": "REGISTRO DE AGENTE",
+    "name": "Nombre completo",
+    "email": "Correo electrónico",
+    "country": "País",
+    "platform": "¿Cómo nos encontraste?",
+    "platformOptions": {
+      "ig": "Instagram",
+      "tiktok": "TikTok",
+      "other": "Otro"
+    },
+    "consent": "Acepto recibir comunicaciones de misión",
+    "ageGate": "Confirmo que tengo 18 años o más",
+    "submit": "REGISTRAR AGENTE",
+    "errors": {
+      "nameRequired": "El nombre es obligatorio",
+      "emailRequired": "Se requiere un correo electrónico válido",
+      "countryRequired": "Selecciona tu país",
+      "ageRequired": "Debes ser mayor de 18 años"
+    }
+  },
+  "briefing": {
+    "title": "INFORME CLASIFICADO",
+    "text": "Ahora eres un operativo de ARMAF. Tienes tiempo limitado para descifrar la misión. Cada rompecabezas resuelto otorga Tokens de Inteligencia. Los tokens desbloquean ventajas en el atraco del mundo real.",
+    "rooms": {
+      "cipher": "CIFRADO",
+      "lock": "CERRADURA",
+      "coordinates": "COORDENADAS",
+      "bonus": "BONUS"
+    },
+    "cta": "INICIAR MISIÓN"
+  },
+  "game": {
+    "timer": "TIEMPO",
+    "tokens": "TOKENS DE INTEL",
+    "skip": "SALTAR SALA",
+    "skipConfirm": "Saltar cuesta 1 token. ¿Continuar?",
+    "roomComplete": "SALA COMPLETADA",
+    "timeBonus": "BONUS DE TIEMPO +1 TOKEN",
+    "nextRoom": "CONTINUAR"
+  },
+  "complete": {
+    "title": "MISIÓN COMPLETA",
+    "tokensLabel": "Tokens de Intel Recolectados",
+    "rank": "Rango de Agente",
+    "coordinates": "Tus Coordenadas",
+    "share": "Comparte tu Rango",
+    "leaderboard": "Ver Tabla de Clasificación Global",
+    "nextDrop": "Próximo lanzamiento en {days} días"
+  },
+  "leaderboard": {
+    "title": "TABLA DE CLASIFICACIÓN GLOBAL",
+    "rank": "Rango",
+    "agent": "Agente",
+    "tokens": "Tokens",
+    "country": "País",
+    "filterCountry": "Filtrar por país",
+    "first500": "PRIMEROS 500"
+  }
+}

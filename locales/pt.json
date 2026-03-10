@@ -1,0 +1,66 @@
+{
+  "landing": {
+    "title": "ARMAF // ISLAND HEIST // DECIFRE A MISSÃO",
+    "subtitle": "Sua missão começa. Apenas alguns chegarão ao cofre.",
+    "cta": "ACEITAR MISSÃO"
+  },
+  "register": {
+    "title": "REGISTRO DE AGENTE",
+    "name": "Nome completo",
+    "email": "Endereço de e-mail",
+    "country": "País",
+    "platform": "Como nos encontrou?",
+    "platformOptions": {
+      "ig": "Instagram",
+      "tiktok": "TikTok",
+      "other": "Outro"
+    },
+    "consent": "Aceito receber comunicações da missão",
+    "ageGate": "Confirmo que tenho 18 anos ou mais",
+    "submit": "REGISTRAR AGENTE",
+    "errors": {
+      "nameRequired": "Nome é obrigatório",
+      "emailRequired": "Um e-mail válido é necessário",
+      "countryRequired": "Selecione seu país",
+      "ageRequired": "Você deve ter 18 anos ou mais"
+    }
+  },
+  "briefing": {
+    "title": "BRIEFING CLASSIFICADO",
+    "text": "Você agora é um operativo da ARMAF. Você tem tempo limitado para decifrar a missão. Cada quebra-cabeça resolvido ganha Tokens de Inteligência. Os tokens desbloqueiam vantagens no assalto do mundo real.",
+    "rooms": {
+      "cipher": "CIFRA",
+      "lock": "FECHADURA",
+      "coordinates": "COORDENADAS",
+      "bonus": "BÔNUS"
+    },
+    "cta": "INICIAR MISSÃO"
+  },
+  "game": {
+    "timer": "TEMPO",
+    "tokens": "TOKENS DE INTEL",
+    "skip": "PULAR SALA",
+    "skipConfirm": "Pular custa 1 token. Continuar?",
+    "roomComplete": "SALA COMPLETADA",
+    "timeBonus": "BÔNUS DE TEMPO +1 TOKEN",
+    "nextRoom": "CONTINUAR"
+  },
+  "complete": {
+    "title": "MISSÃO COMPLETA",
+    "tokensLabel": "Tokens de Intel Coletados",
+    "rank": "Classificação do Agente",
+    "coordinates": "Suas Coordenadas",
+    "share": "Compartilhe sua Classificação",
+    "leaderboard": "Ver Placar Global",
+    "nextDrop": "Próximo lançamento em {days} dias"
+  },
+  "leaderboard": {
+    "title": "PLACAR GLOBAL",
+    "rank": "Classificação",
+    "agent": "Agente",
+    "tokens": "Tokens",
+    "country": "País",
+    "filterCountry": "Filtrar por país",
+    "first500": "PRIMEIROS 500"
+  }
+}

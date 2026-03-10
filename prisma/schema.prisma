@@ -1,0 +1,57 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id @default(cuid())
+  name         String
+  email        String        @unique
+  country      String
+  platform     String        // ig | tiktok | other
+  consentComms Boolean       @default(false)
+  ageVerified  Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  sessions     GameSession[]
+}
+
+model GameSession {
+  id          String       @id @default(cuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id])
+  startedAt   DateTime     @default(now())
+  completedAt DateTime?
+  totalTokens Int          @default(0)
+  timeBonus   Int          @default(0)
+  rank        String?      // rookie | operative | elite
+  puzzleState Json?        // server-generated puzzle data for anti-cheat
+  roomResults RoomResult[]
+}
+
+model RoomResult {
+  id          String      @id @default(cuid())
+  sessionId   String
+  session     GameSession @relation(fields: [sessionId], references: [id])
+  room        String      // cipher | lock | coordinates | bonus
+  completed   Boolean     @default(false)
+  tokensEarned Int        @default(0)
+  timeSpentSec Int
+  attempts    Int         @default(1)
+  completedAt DateTime    @default(now())
+}
+
+model LeaderboardEntry {
+  id          String   @id @default(cuid())
+  nickname    String
+  country     String
+  totalTokens Int
+  rank        String
+  completedAt DateTime
+
+  @@index([country])
+  @@index([totalTokens(sort: Desc)])
+}
