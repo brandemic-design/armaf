@@ -12,7 +12,7 @@ const TARGET_PHRASE = "INTENSITY EVOLVES";
 
 export default function CipherRoom() {
   const router = useRouter();
-  const { addTokens, advanceRoom } = useGame();
+  const { addTokens, advanceRoom, playSound } = useGame();
   const [showSkipModal, setShowSkipModal] = useState(false);
   const [solved, setSolved] = useState(false);
   const [hint, setHint] = useState("");
@@ -23,13 +23,30 @@ export default function CipherRoom() {
   // Entry animation
   useEffect(() => {
     if (containerRef.current) {
+      const el = containerRef.current;
       gsap.fromTo(
-        containerRef.current,
-        { opacity: 0, y: 20 },
+        el,
+        { opacity: 0, y: 30 },
         { opacity: 1, y: 0, duration: 0.8, ease: "power2.out" }
       );
+      // Stagger-animate child sections
+      const sections = el.querySelectorAll("[data-animate]");
+      if (sections.length > 0) {
+        gsap.fromTo(
+          sections,
+          { opacity: 0, y: 15 },
+          { opacity: 1, y: 0, duration: 0.5, stagger: 0.15, delay: 0.3, ease: "power2.out" }
+        );
+      }
     }
   }, []);
+
+  const handleSound = useCallback(
+    (name: string) => {
+      playSound(name);
+    },
+    [playSound]
+  );
 
   const handleComplete = useCallback(async () => {
     setSolved(true);
@@ -40,18 +57,20 @@ export default function CipherRoom() {
     addTokens(tokensEarned);
     setHint(
       hasTimeBonus
-        ? "Speed bonus earned. Legacy detected. The original was just the beginning."
+        ? `Speed bonus earned (+${tokensEarned} tokens). Legacy detected. The original was just the beginning.`
         : "Legacy detected. The original was just the beginning."
     );
 
-    // Success animation
-    if (successRef.current) {
-      gsap.fromTo(
-        successRef.current,
-        { opacity: 0, scale: 0.8 },
-        { opacity: 1, scale: 1, duration: 0.6, ease: "back.out(1.7)" }
-      );
-    }
+    // Success overlay animation
+    requestAnimationFrame(() => {
+      if (successRef.current) {
+        gsap.fromTo(
+          successRef.current,
+          { opacity: 0, scale: 0.85 },
+          { opacity: 1, scale: 1, duration: 0.6, ease: "back.out(1.7)" }
+        );
+      }
+    });
 
     // POST result
     try {
@@ -79,6 +98,7 @@ export default function CipherRoom() {
   const handleSkip = useCallback(async () => {
     setShowSkipModal(false);
     addTokens(-1);
+    playSound("click");
     const timeSpent = Math.floor((Date.now() - roomStartTime) / 1000);
 
     try {
@@ -98,34 +118,40 @@ export default function CipherRoom() {
 
     advanceRoom();
     router.push("/game/lock");
-  }, [addTokens, advanceRoom, roomStartTime, router]);
+  }, [addTokens, advanceRoom, roomStartTime, router, playSound]);
 
   return (
-    <div ref={containerRef} className="opacity-0 flex flex-col" style={{ minHeight: "calc(100vh - 6rem)" }}>
+    <div
+      ref={containerRef}
+      className="opacity-0 flex flex-col gap-6"
+      style={{ minHeight: "calc(100vh - 6rem)" }}
+    >
       {/* Room Header */}
-      <div className="text-center py-3 flex-shrink-0">
-        <p className="text-xs font-mono uppercase tracking-[0.3em] text-mission-red mb-1">
+      <div data-animate className="text-center py-4 flex-shrink-0">
+        <p className="text-xs font-mono uppercase tracking-[0.3em] text-mission-red mb-2">
           Room 1 / 4 &mdash; Cipher Room
         </p>
         <p className="text-[11px] text-mission-white/50 font-mono max-w-lg mx-auto leading-relaxed px-4">
-          Look around the room to find letter clues. Click a clue or type the
-          letters to decode the message.
+          Each letter has been substituted. Use the decoder grid to crack the transmission.
         </p>
       </div>
 
-      {/* 3D Puzzle Area */}
-      <div className="flex-1 min-h-0">
-        <CipherPuzzle onComplete={handleComplete} />
+      {/* Scanline overlay for atmosphere */}
+      <div className="scanline-overlay pointer-events-none fixed inset-0 z-10" />
+
+      {/* Puzzle Area */}
+      <div data-animate className="flex-1 min-h-0 px-2 sm:px-0">
+        <CipherPuzzle onComplete={handleComplete} onSound={handleSound} />
       </div>
 
       {/* Success overlay */}
       {solved && (
         <div
           ref={successRef}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-mission-black/80 backdrop-blur-sm opacity-0"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-mission-black/85 backdrop-blur-sm opacity-0"
         >
           <div className="text-center space-y-4 p-8">
-            <div className="inline-block bg-mission-green/10 border border-mission-green px-8 py-5">
+            <div className="inline-block bg-mission-green/10 border border-mission-green px-8 py-5 success-glow">
               <p className="font-mono text-mission-green text-lg uppercase tracking-widest">
                 Transmission Decoded
               </p>
@@ -136,7 +162,7 @@ export default function CipherRoom() {
             <p className="text-sm text-mission-white/70 font-mono italic max-w-sm mx-auto">
               {hint}
             </p>
-            <p className="text-xs text-mission-white/40 font-mono">
+            <p className="text-xs text-mission-white/40 font-mono animate-pulse">
               Proceeding to Lock Room...
             </p>
           </div>
@@ -145,7 +171,7 @@ export default function CipherRoom() {
 
       {/* Skip button */}
       {!solved && (
-        <div className="flex-shrink-0 text-center py-3">
+        <div data-animate className="flex-shrink-0 text-center py-3">
           <Button
             variant="ghost"
             size="sm"

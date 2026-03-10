@@ -6,6 +6,7 @@ import gsap from "gsap";
 import { useGame } from "../layout";
 import CoordinatesMap from "@/components/game/CoordinatesMap";
 import Button from "@/components/ui/Button";
+import Modal from "@/components/ui/Modal";
 
 /* ------------------------------------------------------------------ */
 /*  Hint Data                                                          */
@@ -22,7 +23,7 @@ const HINTS = [
     id: "hint-2",
     description: "Desert towers of gold",
     icon: "\u{1F54C}",
-    correctCountry: "United Arab Emirates",
+    correctCountry: "UAE",
   },
   {
     id: "hint-3",
@@ -38,7 +39,7 @@ const HINTS = [
   },
 ];
 
-const COUNTRY_OPTIONS = ["United States", "United Arab Emirates", "France", "Italy"];
+const COUNTRY_OPTIONS = ["United States", "UAE", "France", "Italy"];
 
 /* ------------------------------------------------------------------ */
 /*  Coordinates lookup by country code                                 */
@@ -49,10 +50,6 @@ const COORDS_MAP: Record<string, { coords: string; country: string }> = {
   AE: { coords: "25.2048\u00b0 N, 55.2708\u00b0 E", country: "United Arab Emirates" },
   FR: { coords: "48.8584\u00b0 N, 2.2945\u00b0 E", country: "France" },
   IT: { coords: "41.8902\u00b0 N, 12.4922\u00b0 E", country: "Italy" },
-  IN: { coords: "27.1751\u00b0 N, 78.0421\u00b0 E", country: "India" },
-  GB: { coords: "51.5014\u00b0 N, 0.1419\u00b0 W", country: "United Kingdom" },
-  DE: { coords: "52.5163\u00b0 N, 13.3777\u00b0 E", country: "Germany" },
-  SA: { coords: "21.4225\u00b0 N, 39.8262\u00b0 E", country: "Saudi Arabia" },
 };
 
 const DEFAULT_COORDS = { coords: "25.2048\u00b0 N, 55.2708\u00b0 E", country: "United Arab Emirates" };
@@ -63,10 +60,11 @@ const DEFAULT_COORDS = { coords: "25.2048\u00b0 N, 55.2708\u00b0 E", country: "U
 
 export default function CoordinatesRoom() {
   const router = useRouter();
-  const { addTokens, advanceRoom, getElapsedSeconds } = useGame();
+  const { addTokens, advanceRoom, getElapsedSeconds, playSound } = useGame();
   const [solved, setSolved] = useState(false);
   const [mapCoords, setMapCoords] = useState("");
   const [targetCountry, setTargetCountry] = useState("");
+  const [skipModalOpen, setSkipModalOpen] = useState(false);
   const [roomStartTime] = useState(Date.now());
   const containerRef = useRef<HTMLDivElement>(null);
   const successRef = useRef<HTMLDivElement>(null);
@@ -96,9 +94,10 @@ export default function CoordinatesRoom() {
     const tokensEarned = timeSpent < 120 ? 2 : 1;
 
     addTokens(tokensEarned);
+    playSound("success");
 
     // Resolve coordinates from user's registered country (fallback to AE)
-    const userCountryCode = "AE"; // Could be fetched from session/profile
+    const userCountryCode = "AE";
     const resolved = COORDS_MAP[userCountryCode] ?? DEFAULT_COORDS;
     setMapCoords(resolved.coords);
     setTargetCountry(resolved.country);
@@ -142,10 +141,12 @@ export default function CoordinatesRoom() {
         router.push("/complete");
       }
     }, 3500);
-  }, [solved, roomStartTime, addTokens, advanceRoom, getElapsedSeconds, router]);
+  }, [solved, roomStartTime, addTokens, advanceRoom, getElapsedSeconds, router, playSound]);
 
   const handleSkip = useCallback(async () => {
+    setSkipModalOpen(false);
     addTokens(-1);
+    playSound("click");
 
     const timeSpent = Math.floor((Date.now() - roomStartTime) / 1000);
 
@@ -173,7 +174,14 @@ export default function CoordinatesRoom() {
     } else {
       router.push("/complete");
     }
-  }, [addTokens, roomStartTime, advanceRoom, getElapsedSeconds, router]);
+  }, [addTokens, roomStartTime, advanceRoom, getElapsedSeconds, router, playSound]);
+
+  const handleSound = useCallback(
+    (name: string) => {
+      playSound(name);
+    },
+    [playSound]
+  );
 
   return (
     <div ref={containerRef} className="opacity-0">
@@ -186,30 +194,51 @@ export default function CoordinatesRoom() {
           Coordinates Room
         </h1>
         <p className="text-sm text-mission-white/50 font-mono max-w-md mx-auto">
-          Match each landmark to its country. Click a hint, then click the matching country.
+          Match each landmark to its country.
         </p>
       </div>
 
-      {/* 3D Puzzle */}
+      {/* Puzzle */}
       {!solved && (
         <>
           <CoordinatesMap
             hints={HINTS}
             countries={shuffledCountries}
             onComplete={handleComplete}
+            onSound={handleSound}
           />
 
           {/* Skip option */}
           <div className="text-center mt-6">
             <button
-              onClick={handleSkip}
-              className="text-xs font-mono text-mission-white/30 hover:text-mission-red-light transition-colors uppercase tracking-widest"
+              onClick={() => setSkipModalOpen(true)}
+              className="text-xs font-mono text-mission-white/30 hover:text-mission-red-light transition-colors uppercase tracking-widest cursor-pointer"
             >
               Skip Room (-1 Token)
             </button>
           </div>
         </>
       )}
+
+      {/* Skip confirmation modal */}
+      <Modal open={skipModalOpen} onClose={() => setSkipModalOpen(false)}>
+        <div className="text-center space-y-4">
+          <p className="font-mono text-mission-white text-sm uppercase tracking-widest">
+            Skip this room?
+          </p>
+          <p className="text-xs text-mission-white/50 font-mono">
+            You will lose 1 intel token.
+          </p>
+          <div className="flex gap-3 justify-center">
+            <Button variant="secondary" size="sm" onClick={() => setSkipModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" size="sm" onClick={handleSkip}>
+              Skip
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Success overlay */}
       {solved && (

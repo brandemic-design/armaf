@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import dynamic from "next/dynamic";
+import gsap from "gsap";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -9,17 +9,7 @@ import dynamic from "next/dynamic";
 
 interface CipherPuzzleProps {
   onComplete: () => void;
-}
-
-interface CluePanel {
-  id: number;
-  from: string;       // cipher letter (what appears in the encoded message)
-  to: string;         // real letter (what the player needs)
-  position: [number, number, number];
-  rotation: [number, number, number];
-  isNeeded: boolean;   // true = required for an answer blank, false = decoy
-  floatSpeed: number;
-  floatIntensity: number;
+  onSound: (name: string) => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -29,51 +19,60 @@ interface CluePanel {
 const TARGET_PHRASE = "INTENSITY EVOLVES";
 const TARGET_LETTERS = TARGET_PHRASE.replace(/\s/g, "").split(""); // 16 letters
 
-// Fixed substitution cipher (deterministic so the 3D panels are stable)
+// Fixed substitution cipher (deterministic)
 const CIPHER_MAP: Record<string, string> = {
   I: "K", N: "P", T: "G", E: "W", S: "Q",
-  Y: "J", V: "X", O: "Z", L: "F", A: "U",
+  Y: "J", V: "X", O: "Z", L: "F",
 };
-// Reverse: K→I, P→N, G→T, W→E, Q→S, J→Y, X→V, Z→O, F→L, U→A
+
+// Reverse lookup: cipher letter -> real letter
 const REVERSE_MAP: Record<string, string> = {};
 Object.entries(CIPHER_MAP).forEach(([real, cipher]) => {
   REVERSE_MAP[cipher] = real;
 });
 
 // Encode the target phrase
-const ENCODED_PHRASE = TARGET_PHRASE
-  .split("")
-  .map((ch) => (ch === " " ? " " : CIPHER_MAP[ch] || ch))
-  .join("");
+const ENCODED_LETTERS = TARGET_LETTERS.map((ch) => CIPHER_MAP[ch] || ch);
 
-// Decide which positions are pre-filled (~70%) and which are blanks (~30%)
-// We pick specific indices to leave blank — these are the ones the player must find
+// Positions where the player must type (indices into TARGET_LETTERS, 0-based, no spaces)
 const BLANK_INDICES = [0, 4, 7, 10, 14]; // I(0), N(4), I(7), E(10), V(14)
-// letters at those positions: I, N, I, E, V → cipher letters: K, Q, K, W, X
 
-// Unique cipher letters needed for the blanks
-const NEEDED_CIPHER_LETTERS = [...new Set(BLANK_INDICES.map((i) => {
-  const realLetter = TARGET_LETTERS[i];
-  return CIPHER_MAP[realLetter];
-}))]; // K, Q, W, X
+// Unique cipher letters in the full mapping
+const ALL_CIPHER_ENTRIES = Object.entries(CIPHER_MAP); // [real, cipher]
 
-// Decoy cipher mappings (not needed for the answer)
-const DECOY_MAPPINGS: [string, string][] = [
-  ["R", "D"], ["H", "B"], ["C", "A"], ["M", "Y"],
-];
+// ~70% pre-revealed, ~30% hidden in decoder grid
+// Unique letters in phrase: I, N, T, E, S, Y, V, O, L  (9 unique)
+// Hide ~30% => hide 3: I(K), N(P), V(X). Reveal 6: T(G), E(W), S(Q), Y(J), O(Z), L(F)
+const HIDDEN_REAL_LETTERS = new Set(["I", "N", "V"]);
+
+const MAX_HINTS = 3;
 
 /* ------------------------------------------------------------------ */
-/*  3D Scene (loaded dynamically — no SSR)                             */
+/*  Helper: build display chars with space tracking                    */
 /* ------------------------------------------------------------------ */
 
-const CipherScene = dynamic(() => import("./CipherScene"), { ssr: false });
+function buildDisplayChars() {
+  const chars: { char: string; isSpace: boolean; letterIndex: number }[] = [];
+  let letterIdx = 0;
+  for (const ch of TARGET_PHRASE) {
+    if (ch === " ") {
+      chars.push({ char: " ", isSpace: true, letterIndex: -1 });
+    } else {
+      chars.push({ char: ch, isSpace: false, letterIndex: letterIdx });
+      letterIdx++;
+    }
+  }
+  return chars;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Main Component                                                     */
 /* ------------------------------------------------------------------ */
 
-export default function CipherPuzzle({ onComplete }: CipherPuzzleProps) {
-  // Build the answer state: pre-filled for ~70%, empty for blanks
+export default function CipherPuzzle({ onComplete, onSound }: CipherPuzzleProps) {
+  const displayChars = useMemo(buildDisplayChars, []);
+
+  // Player inputs: pre-filled for ~70%, empty for blanks
   const initialInputs = useMemo(() => {
     return TARGET_LETTERS.map((letter, i) =>
       BLANK_INDICES.includes(i) ? "" : letter
@@ -82,111 +81,123 @@ export default function CipherPuzzle({ onComplete }: CipherPuzzleProps) {
 
   const [inputs, setInputs] = useState<string[]>(initialInputs);
   const [completed, setCompleted] = useState(false);
+  const [hintsUsed, setHintsUsed] = useState(0);
+  const [revealedHidden, setRevealedHidden] = useState<Set<string>>(new Set());
+  const [typedMessage, setTypedMessage] = useState("");
+
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const letterBoxRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const decoderGridRef = useRef<HTMLDivElement>(null);
+  const completedRef = useRef(false);
 
-  // Build clue panels for the 3D scene
-  const panels: CluePanel[] = useMemo(() => {
-    const result: CluePanel[] = [];
-    let id = 0;
-
-    // Panels for needed letters
-    const neededPositions: [number, number, number][] = [
-      [-5, 3, -4],
-      [6, 1, -6],
-      [-3, -1, -7],
-      [4, 4, -3],
-    ];
-    const neededRotations: [number, number, number][] = [
-      [0, 0.3, 0.1],
-      [0.1, -0.2, 0],
-      [0, 0.5, -0.1],
-      [-0.1, -0.4, 0.1],
-    ];
-
-    NEEDED_CIPHER_LETTERS.forEach((cipher, i) => {
-      result.push({
-        id: id++,
-        from: cipher,
-        to: REVERSE_MAP[cipher],
-        position: neededPositions[i % neededPositions.length],
-        rotation: neededRotations[i % neededRotations.length],
-        isNeeded: true,
-        floatSpeed: 1.5 + Math.random(),
-        floatIntensity: 0.4 + Math.random() * 0.3,
-      });
-    });
-
-    // Decoy panels
-    const decoyPositions: [number, number, number][] = [
-      [2, -2, -5],
-      [-7, 2, -2],
-      [0, 4.5, -8],
-      [7, -1, -4],
-      [-1, -2.5, -6],
-      [5, 3, -7],
-    ];
-    const decoyRotations: [number, number, number][] = [
-      [0, -0.6, 0],
-      [0.2, 0.1, 0],
-      [0, 0.4, 0.2],
-      [-0.1, -0.3, 0],
-      [0.1, 0.2, -0.1],
-      [0, -0.5, 0.1],
-    ];
-
-    DECOY_MAPPINGS.forEach(([from, to], i) => {
-      result.push({
-        id: id++,
-        from,
-        to,
-        position: decoyPositions[i % decoyPositions.length],
-        rotation: decoyRotations[i % decoyRotations.length],
-        isNeeded: false,
-        floatSpeed: 1 + Math.random(),
-        floatIntensity: 0.3 + Math.random() * 0.2,
-      });
-    });
-
-    return result;
+  // Decoder grid entries: all unique letters used in phrase
+  const decoderEntries = useMemo(() => {
+    return ALL_CIPHER_ENTRIES.map(([real, cipher]) => ({
+      real,
+      cipher,
+      isHidden: HIDDEN_REAL_LETTERS.has(real),
+    }));
   }, []);
 
-  // Check completion
+  /* ---- Mount animation ---- */
+  useEffect(() => {
+    const boxes = letterBoxRefs.current.filter(Boolean);
+    if (boxes.length > 0) {
+      gsap.fromTo(
+        boxes,
+        { opacity: 0, y: 20 },
+        { opacity: 1, y: 0, duration: 0.4, stagger: 0.03, ease: "power2.out" }
+      );
+    }
+    if (decoderGridRef.current) {
+      gsap.fromTo(
+        decoderGridRef.current,
+        { opacity: 0, y: -10 },
+        { opacity: 1, y: 0, duration: 0.6, ease: "power2.out", delay: 0.2 }
+      );
+    }
+  }, []);
+
+  /* ---- Completion sequence ---- */
+  const runCompletionSequence = useCallback(() => {
+    const boxes = letterBoxRefs.current.filter(Boolean);
+    // Flash all boxes green in sequence
+    gsap.to(boxes, {
+      borderColor: "#22c55e",
+      duration: 0.15,
+      stagger: 0.05,
+      ease: "power1.inOut",
+      onComplete: () => {
+        gsap.to(boxes, {
+          scale: 1.05,
+          duration: 0.2,
+          stagger: 0.04,
+          yoyo: true,
+          repeat: 1,
+          ease: "power1.inOut",
+        });
+      },
+    });
+
+    // Typewriter "TRANSMISSION DECODED"
+    const msg = "TRANSMISSION DECODED";
+    let idx = 0;
+    const typeInterval = setInterval(() => {
+      idx++;
+      setTypedMessage(msg.slice(0, idx));
+      if (idx >= msg.length) clearInterval(typeInterval);
+    }, 50);
+
+    onSound("success");
+    onComplete();
+  }, [onComplete, onSound]);
+
+  /* ---- Check completion ---- */
   const checkCompletion = useCallback(
     (currentInputs: string[]) => {
+      if (completedRef.current) return;
+      const allFilled = currentInputs.every((v) => v.length > 0);
       const allCorrect = currentInputs.every(
         (val, i) => val.toUpperCase() === TARGET_LETTERS[i]
       );
-      if (allCorrect && currentInputs.every((v) => v.length > 0)) {
+      if (allFilled && allCorrect) {
+        completedRef.current = true;
         setCompleted(true);
-        onComplete();
+        runCompletionSequence();
       }
     },
-    [onComplete]
+    [runCompletionSequence]
   );
 
-  // When a 3D panel is clicked, auto-fill corresponding blanks
-  const handlePanelClick = useCallback(
-    (cipherLetter: string, realLetter: string) => {
-      setInputs((prev) => {
-        const next = [...prev];
-        BLANK_INDICES.forEach((bi) => {
-          const targetReal = TARGET_LETTERS[bi];
-          if (targetReal === realLetter && !next[bi]) {
-            next[bi] = realLetter;
-          }
-        });
-        setTimeout(() => checkCompletion(next), 0);
-        return next;
-      });
-    },
-    [checkCompletion]
-  );
+  /* ---- Animate correct / incorrect ---- */
+  const animateCorrect = useCallback((index: number) => {
+    const box = letterBoxRefs.current[index];
+    if (box) {
+      gsap.fromTo(box, { scale: 1.2 }, { scale: 1, duration: 0.3, ease: "back.out(2)" });
+    }
+  }, []);
 
-  // Manual typing
+  const animateIncorrect = useCallback((index: number) => {
+    const box = letterBoxRefs.current[index];
+    if (box) {
+      gsap.fromTo(
+        box,
+        { x: -6 },
+        { x: 0, duration: 0.4, ease: "elastic.out(1, 0.3)" }
+      );
+    }
+  }, []);
+
+  /* ---- Manual typing ---- */
   const handleChange = useCallback(
     (index: number, value: string) => {
-      if (!BLANK_INDICES.includes(index)) return; // can't edit pre-filled
+      if (!BLANK_INDICES.includes(index) || completedRef.current) return;
       const char = value.slice(-1).toUpperCase();
+      if (!char) return;
+
+      const isCorrect = char === TARGET_LETTERS[index];
+
       setInputs((prev) => {
         const next = [...prev];
         next[index] = char;
@@ -194,160 +205,250 @@ export default function CipherPuzzle({ onComplete }: CipherPuzzleProps) {
         return next;
       });
 
-      // Auto-advance to next blank
-      if (char) {
-        for (let i = index + 1; i < TARGET_LETTERS.length; i++) {
-          if (BLANK_INDICES.includes(i) && !inputs[i]) {
-            inputRefs.current[i]?.focus();
+      if (isCorrect) {
+        onSound("click");
+        animateCorrect(index);
+        // Auto-advance to next blank
+        const blankOrder = BLANK_INDICES.filter((bi) => bi > index);
+        for (const bi of blankOrder) {
+          if (!inputs[bi] || bi === index) {
+            inputRefs.current[bi]?.focus();
             break;
           }
         }
+      } else {
+        onSound("error");
+        animateIncorrect(index);
       }
     },
-    [checkCompletion, inputs]
+    [checkCompletion, inputs, onSound, animateCorrect, animateIncorrect]
   );
 
+  /* ---- Keyboard navigation ---- */
   const handleKeyDown = useCallback(
     (index: number, e: React.KeyboardEvent) => {
-      if (e.key === "Backspace" && !inputs[index]) {
+      if (e.key === "Backspace") {
+        if (!inputs[index]) {
+          // Move to previous blank
+          const prevBlanks = BLANK_INDICES.filter((bi) => bi < index).reverse();
+          for (const bi of prevBlanks) {
+            inputRefs.current[bi]?.focus();
+            break;
+          }
+        } else if (BLANK_INDICES.includes(index)) {
+          setInputs((prev) => {
+            const next = [...prev];
+            next[index] = "";
+            return next;
+          });
+        }
+        e.preventDefault();
+      } else if (e.key === "ArrowLeft") {
         for (let i = index - 1; i >= 0; i--) {
           if (BLANK_INDICES.includes(i)) {
             inputRefs.current[i]?.focus();
             break;
           }
         }
-      } else if (e.key === "ArrowLeft") {
-        for (let i = index - 1; i >= 0; i--) {
-          inputRefs.current[i]?.focus();
-          break;
-        }
       } else if (e.key === "ArrowRight") {
         for (let i = index + 1; i < TARGET_LETTERS.length; i++) {
-          inputRefs.current[i]?.focus();
-          break;
+          if (BLANK_INDICES.includes(i)) {
+            inputRefs.current[i]?.focus();
+            break;
+          }
         }
       }
     },
     [inputs]
   );
 
+  /* ---- Hint system ---- */
+  const handleHint = useCallback(() => {
+    if (hintsUsed >= MAX_HINTS || completedRef.current) return;
+
+    // Find a hidden letter that hasn't been revealed yet
+    const hiddenArr = Array.from(HIDDEN_REAL_LETTERS).filter(
+      (l) => !revealedHidden.has(l)
+    );
+    if (hiddenArr.length === 0) return;
+
+    const letterToReveal = hiddenArr[0];
+    const cipherLetter = CIPHER_MAP[letterToReveal];
+
+    setRevealedHidden((prev) => new Set([...prev, letterToReveal]));
+    setHintsUsed((prev) => prev + 1);
+    onSound("click");
+
+    // Flash animation on the grid cell
+    const cell = document.getElementById(`decoder-cell-${cipherLetter}`);
+    if (cell) {
+      gsap.fromTo(
+        cell,
+        { backgroundColor: "rgba(239, 68, 68, 0.5)", scale: 1.2 },
+        { backgroundColor: "rgba(34, 197, 94, 0.2)", scale: 1, duration: 0.6, ease: "power2.out" }
+      );
+    }
+  }, [hintsUsed, revealedHidden, onSound]);
+
+  /* ---- Letter status ---- */
   const getLetterStatus = (index: number, value: string): "correct" | "incorrect" | "empty" | "prefilled" => {
     if (!BLANK_INDICES.includes(index)) return "prefilled";
     if (!value) return "empty";
     return value.toUpperCase() === TARGET_LETTERS[index] ? "correct" : "incorrect";
   };
 
-  // Progress
-  const filledCount = inputs.filter((v) => v.length > 0).length;
+  /* ---- Progress ---- */
+  const filledCorrect = inputs.filter(
+    (v, i) => v.length > 0 && v.toUpperCase() === TARGET_LETTERS[i]
+  ).length;
   const totalCount = TARGET_LETTERS.length;
-
-  // Build display chars with space handling
-  const displayChars: { char: string; isSpace: boolean; letterIndex: number }[] = [];
-  let letterIdx = 0;
-  for (const ch of TARGET_PHRASE) {
-    if (ch === " ") {
-      displayChars.push({ char: " ", isSpace: true, letterIndex: -1 });
-    } else {
-      displayChars.push({ char: ch, isSpace: false, letterIndex: letterIdx });
-      letterIdx++;
-    }
-  }
+  const progressPct = (filledCorrect / totalCount) * 100;
 
   return (
-    <div className="flex flex-col h-full">
-      {/* 3D Canvas Area */}
-      <div className="relative flex-shrink-0" style={{ height: "50vh" }}>
-        <CipherScene panels={panels} onPanelClick={handlePanelClick} />
-
-        {/* Subtle vignette overlay */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: "radial-gradient(ellipse at center, transparent 40%, rgba(10,10,10,0.7) 100%)",
-          }}
-        />
-      </div>
-
-      {/* Answer Panel (2D overlay at bottom) */}
-      <div className="flex-1 bg-mission-black/95 backdrop-blur border-t border-mission-grey-light px-4 py-4 overflow-auto">
-        {/* Encoded reference */}
-        <div className="text-center mb-3">
-          <p className="text-[10px] font-mono uppercase tracking-[0.25em] text-mission-white/40 mb-1">
-            Encoded Transmission
-          </p>
-          <p className="font-mono text-base sm:text-lg tracking-[0.15em] text-mission-red-light">
-            {ENCODED_PHRASE}
-          </p>
+    <div ref={containerRef} className="flex flex-col gap-6">
+      {/* ---- DECODER GRID ---- */}
+      <div ref={decoderGridRef}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-mono text-xs uppercase tracking-[0.25em] text-mission-white/60">
+            Decoder Grid
+          </h3>
+          <button
+            onClick={handleHint}
+            disabled={hintsUsed >= MAX_HINTS || completed}
+            className={`font-mono text-xs uppercase tracking-wider px-3 py-1.5 border transition-all duration-200
+              ${hintsUsed >= MAX_HINTS || completed
+                ? "border-mission-grey-light text-mission-white/20 cursor-not-allowed"
+                : "border-mission-red text-mission-red hover:bg-mission-red/10 pulse-cta cursor-pointer"
+              }`}
+          >
+            Decrypt Assist ({MAX_HINTS - hintsUsed})
+          </button>
         </div>
 
-        {/* Letter boxes */}
-        <div className="flex flex-wrap justify-center gap-1 sm:gap-1.5 mb-3">
-          {displayChars.map((dc, i) => {
-            if (dc.isSpace) {
-              return <div key={`space-${i}`} className="w-3 sm:w-5" />;
-            }
-
-            const idx = dc.letterIndex;
-            const value = inputs[idx] || "";
-            const status = getLetterStatus(idx, value);
-            const isBlank = BLANK_INDICES.includes(idx);
-            const encodedChar = ENCODED_PHRASE.replace(/\s/g, "")[idx];
-
-            let borderClass = "border-mission-grey-light";
-            let textClass = "text-mission-white";
-
-            if (status === "prefilled") {
-              borderClass = "border-mission-green/40";
-              textClass = "text-mission-green";
-            } else if (status === "correct") {
-              borderClass = "border-mission-green";
-              textClass = "text-mission-green";
-            } else if (status === "incorrect") {
-              borderClass = "border-mission-red-light";
-              textClass = "text-mission-red-light";
-            } else {
-              borderClass = "border-mission-grey-light focus-within:border-mission-red";
-            }
+        <div className="grid grid-cols-9 gap-1.5 sm:gap-2">
+          {decoderEntries.map(({ real, cipher, isHidden }) => {
+            const isRevealed = !isHidden || revealedHidden.has(real);
 
             return (
-              <div key={`char-${i}`} className="flex flex-col items-center gap-0.5">
-                <span className="text-[9px] font-mono text-mission-white/30">
-                  {encodedChar}
+              <div
+                key={cipher}
+                id={`decoder-cell-${cipher}`}
+                className={`flex flex-col items-center p-1.5 sm:p-2 border font-mono text-center transition-all duration-300
+                  ${isRevealed
+                    ? "border-mission-green/40 bg-mission-green/5"
+                    : "border-mission-red/60 bg-mission-red/5 error-glow"
+                  }`}
+              >
+                <span className="text-[10px] sm:text-xs text-mission-white/40 leading-none">
+                  {cipher}
                 </span>
-                <input
-                  ref={(el) => { inputRefs.current[idx] = el; }}
-                  type="text"
-                  maxLength={1}
-                  value={value}
-                  readOnly={!isBlank}
-                  onChange={(e) => handleChange(idx, e.target.value)}
-                  onKeyDown={(e) => handleKeyDown(idx, e)}
-                  className={`w-7 h-9 sm:w-9 sm:h-11 text-center font-mono text-sm sm:text-base uppercase
-                    bg-mission-grey border-2 ${borderClass} ${textClass}
-                    focus:outline-none transition-all duration-200
-                    ${!isBlank ? "bg-mission-grey-light/30 cursor-default" : ""}
-                    ${completed ? "border-mission-green" : ""}`}
-                />
+                <span className="text-xs sm:text-sm font-bold mt-0.5 leading-none">
+                  {isRevealed ? (
+                    <span className="text-mission-green">{real}</span>
+                  ) : (
+                    <span className="text-mission-red">?</span>
+                  )}
+                </span>
               </div>
             );
           })}
         </div>
+      </div>
 
-        {/* Progress */}
+      {/* ---- ENCODED PHRASE ---- */}
+      <div className="text-center">
+        <p className="text-[10px] font-mono uppercase tracking-[0.25em] text-mission-white/40 mb-2">
+          Intercepted Transmission
+        </p>
+        <p className="font-mono text-base sm:text-lg tracking-[0.2em] text-mission-red-light">
+          {ENCODED_LETTERS.join("")}
+        </p>
+      </div>
+
+      {/* ---- INPUT BOXES ---- */}
+      <div className="flex flex-wrap justify-center gap-1 sm:gap-1.5">
+        {displayChars.map((dc, i) => {
+          if (dc.isSpace) {
+            return <div key={`space-${i}`} className="w-4 sm:w-6" />;
+          }
+
+          const idx = dc.letterIndex;
+          const value = inputs[idx] || "";
+          const status = getLetterStatus(idx, value);
+          const isBlank = BLANK_INDICES.includes(idx);
+          const encodedChar = ENCODED_LETTERS[idx];
+
+          let borderClass = "border-mission-grey-light";
+          let textClass = "text-mission-white";
+          let bgExtra = "";
+
+          if (status === "prefilled") {
+            borderClass = "border-mission-green/40";
+            textClass = "text-mission-green";
+            bgExtra = "bg-mission-green/5";
+          } else if (status === "correct") {
+            borderClass = "border-mission-green success-glow";
+            textClass = "text-mission-green";
+          } else if (status === "incorrect") {
+            borderClass = "border-mission-red-light error-glow";
+            textClass = "text-mission-red-light";
+          } else {
+            borderClass = "border-mission-grey-light focus-within:border-mission-red";
+          }
+
+          return (
+            <div
+              key={`char-${i}`}
+              ref={(el) => { letterBoxRefs.current[idx] = el as HTMLDivElement; }}
+              className="flex flex-col items-center gap-0.5"
+            >
+              <span className="text-[9px] font-mono text-mission-white/30">
+                {encodedChar}
+              </span>
+              <input
+                ref={(el) => { inputRefs.current[idx] = el; }}
+                type="text"
+                maxLength={1}
+                value={value}
+                readOnly={!isBlank || completed}
+                onChange={(e) => handleChange(idx, e.target.value)}
+                onKeyDown={(e) => handleKeyDown(idx, e)}
+                className={`w-8 h-10 sm:w-10 sm:h-12 text-center font-mono text-sm sm:text-base uppercase
+                  bg-mission-grey border-2 ${borderClass} ${textClass} ${bgExtra}
+                  focus:outline-none transition-all duration-200
+                  ${!isBlank ? "cursor-default" : "cursor-text"}
+                  ${completed ? "border-mission-green" : ""}`}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ---- PROGRESS BAR ---- */}
+      <div className="max-w-md mx-auto w-full">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[10px] font-mono text-mission-white/40">Decoded</span>
+          <span className="text-[10px] font-mono text-mission-white/40">
+            <span className="text-mission-green">{filledCorrect}</span> / {totalCount}
+          </span>
+        </div>
+        <div className="h-1.5 bg-mission-grey border border-mission-grey-light overflow-hidden">
+          <div
+            className="h-full bg-mission-green transition-all duration-500 ease-out"
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
+      </div>
+
+      {/* ---- COMPLETION MESSAGE ---- */}
+      {completed && typedMessage && (
         <div className="text-center">
-          <p className="text-[10px] font-mono text-mission-white/40">
-            Decoded: <span className="text-mission-green">{filledCount}</span> / {totalCount}
+          <p className="font-mono text-mission-green text-sm sm:text-base tracking-widest">
+            {typedMessage}
+            <span className="animate-pulse">_</span>
           </p>
         </div>
-
-        {completed && (
-          <div className="text-center mt-2 animate-pulse">
-            <p className="font-mono text-mission-green text-sm tracking-widest">
-              TRANSMISSION DECODED
-            </p>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
