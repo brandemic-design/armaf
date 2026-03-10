@@ -4,23 +4,25 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import gsap from "gsap";
 import { useGame } from "../layout";
-import Button from "@/components/ui/Button";
+import BonusPuzzle from "@/components/game/BonusPuzzle";
 
-const SCRAMBLED = "ARMAF ISLAND HEIST";
-const ANSWER = "ARMAF ISLAND HEIST";
-const SCRAMBLED_DISPLAY = "FMARA DINLAS TISEH";
+/* ------------------------------------------------------------------ */
+/*  Constants                                                          */
+/* ------------------------------------------------------------------ */
+
+const TIME_LIMIT = 45;
+
+/* ------------------------------------------------------------------ */
+/*  Page Component                                                     */
+/* ------------------------------------------------------------------ */
 
 export default function BonusRoom() {
   const router = useRouter();
   const { addTokens } = useGame();
-  const [input, setInput] = useState("");
-  const [timeLeft, setTimeLeft] = useState(45);
-  const [solved, setSolved] = useState(false);
-  const [expired, setExpired] = useState(false);
+  const [result, setResult] = useState<"pending" | "success" | "timeout">("pending");
   const [roomStartTime] = useState(Date.now());
   const containerRef = useRef<HTMLDivElement>(null);
-  const timerBarRef = useRef<HTMLDivElement>(null);
-  const successRef = useRef<HTMLDivElement>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
 
   // Entry animation
   useEffect(() => {
@@ -31,182 +33,103 @@ export default function BonusRoom() {
         { opacity: 1, y: 0, duration: 0.8, ease: "power2.out" }
       );
     }
-
-    // Animate timer bar shrinking
-    if (timerBarRef.current) {
-      gsap.to(timerBarRef.current, {
-        width: "0%",
-        duration: 45,
-        ease: "linear",
-      });
-    }
   }, []);
 
-  // Countdown timer
+  // Result animation
   useEffect(() => {
-    if (solved || expired) return;
+    if (result !== "pending" && resultRef.current) {
+      gsap.fromTo(
+        resultRef.current,
+        { opacity: 0, scale: 0.8 },
+        { opacity: 1, scale: 1, duration: 0.6, ease: "back.out(1.7)" }
+      );
+    }
+  }, [result]);
 
-    const interval = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          setExpired(true);
-          return 0;
+  const handleComplete = useCallback(
+    async (success: boolean) => {
+      const timeSpent = Math.floor((Date.now() - roomStartTime) / 1000);
+
+      if (success) {
+        setResult("success");
+        addTokens(1);
+
+        try {
+          await fetch("/api/game/submit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              room: "bonus",
+              answer: "ARMAF ISLAND HEIST",
+              timeSpentSec: timeSpent,
+              skipped: false,
+            }),
+          });
+        } catch {
+          // Silent fail
         }
-        return prev - 1;
-      });
-    }, 1000);
+      } else {
+        setResult("timeout");
 
-    return () => clearInterval(interval);
-  }, [solved, expired]);
+        try {
+          await fetch("/api/game/submit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              room: "bonus",
+              answer: "timeout",
+              timeSpentSec: timeSpent,
+              skipped: false,
+            }),
+          });
+        } catch {
+          // Silent fail
+        }
+      }
 
-  // Handle timeout
-  useEffect(() => {
-    if (expired && !solved) {
-      const timeSpent = Math.floor((Date.now() - roomStartTime) / 1000);
-
-      fetch("/api/game/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          room: "bonus",
-          answer: input,
-          timeSpentSec: timeSpent,
-          skipped: false,
-        }),
-      }).catch(() => {});
-
+      // Both paths navigate to /complete after 2s
       setTimeout(() => {
         router.push("/complete");
-      }, 2500);
-    }
-  }, [expired, solved, input, roomStartTime, router]);
-
-  const handleSubmit = useCallback(async () => {
-    const normalized = input.trim().toUpperCase();
-    if (normalized === ANSWER) {
-      setSolved(true);
-      addTokens(1);
-
-      const timeSpent = Math.floor((Date.now() - roomStartTime) / 1000);
-
-      if (successRef.current) {
-        gsap.fromTo(
-          successRef.current,
-          { opacity: 0, scale: 0.8 },
-          { opacity: 1, scale: 1, duration: 0.6, ease: "back.out(1.7)" }
-        );
-      }
-
-      try {
-        await fetch("/api/game/submit", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            room: "bonus",
-            answer: normalized,
-            timeSpentSec: timeSpent,
-            skipped: false,
-          }),
-        });
-      } catch {
-        // Silent fail
-      }
-
-      setTimeout(() => {
-        router.push("/complete");
-      }, 2500);
-    }
-  }, [input, addTokens, roomStartTime, router]);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === "Enter") {
-        handleSubmit();
-      }
+      }, 2000);
     },
-    [handleSubmit]
+    [roomStartTime, addTokens, router]
   );
-
-  const isLow = timeLeft <= 10;
 
   return (
     <div ref={containerRef} className="opacity-0">
       {/* Room Header */}
-      <div className="text-center mb-8">
-        <p className="text-xs font-mono uppercase tracking-[0.3em] text-mission-red mb-2">
-          Bonus Room
-        </p>
-        <h1 className="font-mono text-2xl sm:text-3xl uppercase tracking-widest text-mission-white mb-2">
-          Anagram Challenge
-        </h1>
-        <p className="text-sm text-mission-white/50 font-mono max-w-md mx-auto">
-          Unscramble the letters before time runs out. Bonus intel awaits.
-        </p>
-      </div>
-
-      {/* Timer bar */}
-      <div className="w-full max-w-md mx-auto mb-8">
-        <div className="flex justify-between text-xs font-mono mb-1">
-          <span className="text-mission-white/50">Time Remaining</span>
-          <span className={isLow ? "text-mission-red-light animate-pulse font-bold" : "text-mission-white"}>
-            {timeLeft}s
+      <div className="text-center mb-4">
+        <div className="flex items-center justify-center gap-3 mb-2">
+          <p className="text-xs font-mono uppercase tracking-[0.3em] text-mission-red">
+            Room 4 / 4 — Bonus Room
+          </p>
+          <span className="px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest bg-mission-red/20 border border-mission-red text-mission-red-light rounded">
+            Optional
           </span>
         </div>
-        <div className="h-1 bg-mission-grey-light overflow-hidden">
-          <div
-            ref={timerBarRef}
-            className={`h-full transition-colors ${isLow ? "bg-mission-red-light" : "bg-mission-red"}`}
-            style={{ width: "100%" }}
-          />
-        </div>
+        <h1 className="font-mono text-2xl sm:text-3xl uppercase tracking-widest text-mission-white mb-2">
+          Floating Letters
+        </h1>
+        <p className="text-sm text-mission-white/50 font-mono max-w-md mx-auto">
+          Click the floating letters in order to spell the secret phrase. Beat the clock!
+        </p>
       </div>
 
-      {!solved && !expired && (
-        <div className="max-w-md mx-auto space-y-6">
-          {/* Scrambled word display */}
-          <div className="text-center bg-mission-grey border border-mission-grey-light p-6">
-            <p className="text-xs font-mono uppercase tracking-widest text-mission-white/50 mb-3">
-              Scrambled Phrase
-            </p>
-            <p className="font-mono text-2xl sm:text-3xl tracking-[0.15em] text-mission-red-light">
-              {SCRAMBLED_DISPLAY}
-            </p>
-          </div>
-
-          {/* Input */}
-          <div className="space-y-3">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Type your answer..."
-              autoFocus
-              className="w-full bg-mission-grey border border-mission-grey-light px-4 py-3 text-sm text-mission-white font-mono placeholder:text-mission-white/30 focus:outline-none focus:border-mission-red transition-colors text-center uppercase tracking-widest"
-            />
-            <Button
-              variant="primary"
-              size="md"
-              onClick={handleSubmit}
-              className="w-full"
-            >
-              Submit Answer
-            </Button>
-          </div>
-        </div>
+      {/* Puzzle */}
+      {result === "pending" && (
+        <BonusPuzzle onComplete={handleComplete} timeLimit={TIME_LIMIT} />
       )}
 
       {/* Success state */}
-      {solved && (
-        <div ref={successRef} className="text-center space-y-4 opacity-0">
+      {result === "success" && (
+        <div ref={resultRef} className="text-center space-y-4 opacity-0 mt-12">
           <div className="inline-block bg-mission-green/10 border border-mission-green px-6 py-4">
             <p className="font-mono text-mission-green text-sm uppercase tracking-widest">
               Bonus Token Earned!
             </p>
           </div>
           <p className="font-mono text-mission-white text-lg tracking-widest">
-            {ANSWER}
+            ARMAF ISLAND HEIST
           </p>
           <p className="text-xs text-mission-white/40 font-mono">
             Proceeding to mission debrief...
@@ -215,8 +138,8 @@ export default function BonusRoom() {
       )}
 
       {/* Timeout state */}
-      {expired && !solved && (
-        <div className="text-center space-y-4">
+      {result === "timeout" && (
+        <div ref={resultRef} className="text-center space-y-4 opacity-0 mt-12">
           <div className="inline-block bg-mission-red/10 border border-mission-red px-6 py-4">
             <p className="font-mono text-mission-red-light text-sm uppercase tracking-widest">
               Time Expired

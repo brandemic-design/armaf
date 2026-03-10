@@ -8,12 +8,11 @@ import LockGrid from "@/components/game/LockGrid";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 
-/** Generate a random pattern of 6-8 highlighted cells from a 4x4 grid. */
+/** Generate a random pattern of 6 unique cell indices (0-15). */
 function generatePattern(): number[] {
-  const count = Math.floor(Math.random() * 3) + 6; // 6-8 cells
   const indices = Array.from({ length: 16 }, (_, i) => i);
   const shuffled = indices.sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, count);
+  return shuffled.slice(0, 6);
 }
 
 export default function LockRoom() {
@@ -23,6 +22,7 @@ export default function LockRoom() {
   const [solved, setSolved] = useState(false);
   const [failed, setFailed] = useState(false);
   const [showSkipModal, setShowSkipModal] = useState(false);
+  const [phase, setPhase] = useState<"showing" | "hidden" | "result">("showing");
   const [coordinates, setCoordinates] = useState("");
   const [roomStartTime] = useState(Date.now());
   const containerRef = useRef<HTMLDivElement>(null);
@@ -41,8 +41,23 @@ export default function LockRoom() {
     }
   }, []);
 
+  // Phase management: showing -> hidden after the sequence plays out
+  useEffect(() => {
+    if (phase !== "showing") return;
+
+    // Total showing time = pattern.length * 600ms + 800ms buffer
+    const showDuration = pattern.length * 600 + 800;
+    const timer = setTimeout(() => {
+      setPhase("hidden");
+    }, showDuration);
+
+    return () => clearTimeout(timer);
+  }, [phase, pattern.length]);
+
   const handleComplete = useCallback(
     async (success: boolean) => {
+      setPhase("result");
+
       if (success) {
         setSolved(true);
         const timeSpent = Math.floor((Date.now() - roomStartTime) / 1000);
@@ -52,13 +67,15 @@ export default function LockRoom() {
         setCoordinates("25.20\u00b0 N, 55.27\u00b0 E");
 
         // Success animation
-        if (successRef.current) {
-          gsap.fromTo(
-            successRef.current,
-            { opacity: 0, scale: 0.8 },
-            { opacity: 1, scale: 1, duration: 0.6, ease: "back.out(1.7)" }
-          );
-        }
+        setTimeout(() => {
+          if (successRef.current) {
+            gsap.fromTo(
+              successRef.current,
+              { opacity: 0, scale: 0.8 },
+              { opacity: 1, scale: 1, duration: 0.6, ease: "back.out(1.7)" }
+            );
+          }
+        }, 100);
 
         try {
           await fetch("/api/game/submit", {
@@ -82,8 +99,14 @@ export default function LockRoom() {
       } else {
         const newAttempts = attempts + 1;
         setAttempts(newAttempts);
+
         if (newAttempts >= 3) {
           setFailed(true);
+        } else {
+          // Reset for next attempt after a brief delay
+          setTimeout(() => {
+            setPhase("showing");
+          }, 1500);
         }
       }
     },
@@ -93,6 +116,7 @@ export default function LockRoom() {
   const handleRetry = useCallback(() => {
     setAttempts(0);
     setFailed(false);
+    setPhase("showing");
   }, []);
 
   const handleSkip = useCallback(async () => {
@@ -122,7 +146,7 @@ export default function LockRoom() {
   return (
     <div ref={containerRef} className="opacity-0">
       {/* Room Header */}
-      <div className="text-center mb-8">
+      <div className="text-center mb-6">
         <p className="text-xs font-mono uppercase tracking-[0.3em] text-mission-red mb-2">
           Room 2 / 4
         </p>
@@ -130,16 +154,16 @@ export default function LockRoom() {
           Lock Room
         </h1>
         <p className="text-sm text-mission-white/50 font-mono max-w-md mx-auto">
-          A security grid protects the vault. Memorize the pattern and replay it in exact order.
+          Watch the sequence. Repeat it to open the vault.
         </p>
       </div>
 
       {/* Attempts indicator */}
-      <div className="flex justify-center gap-2 mb-6">
+      <div className="flex justify-center items-center gap-2 mb-4">
         {Array.from({ length: 3 }).map((_, i) => (
           <div
             key={i}
-            className={`w-3 h-3 rounded-full border ${
+            className={`w-3 h-3 rounded-full border transition-colors duration-300 ${
               i < attempts
                 ? "bg-mission-red-light border-mission-red-light"
                 : "bg-transparent border-mission-grey-light"
@@ -151,18 +175,32 @@ export default function LockRoom() {
         </span>
       </div>
 
-      {/* Puzzle or result */}
+      {/* Phase indicator */}
+      {!solved && !failed && (
+        <div className="text-center mb-2">
+          <p className="font-mono text-xs uppercase tracking-widest text-mission-white/40">
+            {phase === "showing"
+              ? "Memorize the sequence..."
+              : phase === "hidden"
+              ? "Your turn \u2014 click the buttons in order"
+              : "Verifying..."}
+          </p>
+        </div>
+      )}
+
+      {/* 3D Vault Scene */}
       {!solved && !failed && (
         <LockGrid
           pattern={pattern}
           onComplete={handleComplete}
           attempts={attempts}
+          phase={phase}
         />
       )}
 
       {/* Failure state */}
       {failed && !solved && (
-        <div className="text-center space-y-6">
+        <div className="text-center space-y-6 mt-8">
           <div className="bg-mission-red/10 border border-mission-red p-6">
             <p className="font-mono text-mission-red-light text-sm uppercase tracking-widest mb-2">
               Access Denied
@@ -184,21 +222,32 @@ export default function LockRoom() {
 
       {/* Success overlay */}
       {solved && (
-        <div ref={successRef} className="text-center space-y-4 opacity-0">
+        <div ref={successRef} className="text-center space-y-4 mt-8 opacity-0">
           <div className="relative inline-block">
             <div className="w-24 h-24 border-4 border-mission-green rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-12 h-12 text-mission-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+              <svg
+                className="w-12 h-12 text-mission-green"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"
+                />
               </svg>
             </div>
           </div>
           <div className="inline-block bg-mission-green/10 border border-mission-green px-6 py-4">
             <p className="font-mono text-mission-green text-sm uppercase tracking-widest">
-              Lock Opened - Intel Token Earned
+              Vault Opened — Intel Token Earned
             </p>
           </div>
           <p className="text-sm text-mission-white/50 font-mono">
-            Partial coordinates recovered: <span className="text-mission-red-light">{coordinates}</span>
+            Partial coordinates recovered:{" "}
+            <span className="text-mission-red-light">{coordinates}</span>
           </p>
           <p className="text-xs text-mission-white/40 font-mono">
             Proceeding to Coordinates Room...

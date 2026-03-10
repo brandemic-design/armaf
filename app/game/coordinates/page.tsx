@@ -1,58 +1,81 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import gsap from "gsap";
 import { useGame } from "../layout";
 import CoordinatesMap from "@/components/game/CoordinatesMap";
 import Button from "@/components/ui/Button";
 
+/* ------------------------------------------------------------------ */
+/*  Hint Data                                                          */
+/* ------------------------------------------------------------------ */
+
 const HINTS = [
   {
     id: "hint-1",
-    description: "Towering spire in the desert, glass and steel reach the sky",
-    icon: "\u{1F3D7}\u{FE0F}",
-    answer: "United Arab Emirates",
+    description: "Towering statue of freedom",
+    icon: "\u{1F5FD}",
+    correctCountry: "United States",
   },
   {
     id: "hint-2",
-    description: "Ancient monument of white marble, a testament to love",
+    description: "Desert towers of gold",
     icon: "\u{1F54C}",
-    answer: "India",
+    correctCountry: "United Arab Emirates",
   },
   {
     id: "hint-3",
-    description: "Statue with a torch, guardian of the harbor",
-    icon: "\u{1F5FD}",
-    answer: "United States",
+    description: "Iron lattice reaching the sky",
+    icon: "\u{1F5FC}",
+    correctCountry: "France",
   },
   {
     id: "hint-4",
-    description: "Iron lattice tower, city of lights below",
-    icon: "\u{1F5FC}",
-    answer: "France",
+    description: "Ancient colosseum of warriors",
+    icon: "\u{1F3AD}",
+    correctCountry: "Italy",
   },
 ];
 
-const CORRECT_MAP: Record<string, string> = {};
-HINTS.forEach((h) => {
-  CORRECT_MAP[h.id] = h.answer;
-});
+const COUNTRY_OPTIONS = ["United States", "United Arab Emirates", "France", "Italy"];
 
-const OPTIONS = ["France", "United States", "India", "United Arab Emirates"];
-// Shuffle options for display
-const SHUFFLED_OPTIONS = [...OPTIONS].sort(() => Math.random() - 0.5);
+/* ------------------------------------------------------------------ */
+/*  Coordinates lookup by country code                                 */
+/* ------------------------------------------------------------------ */
+
+const COORDS_MAP: Record<string, { coords: string; country: string }> = {
+  US: { coords: "40.6892\u00b0 N, 74.0445\u00b0 W", country: "United States" },
+  AE: { coords: "25.2048\u00b0 N, 55.2708\u00b0 E", country: "United Arab Emirates" },
+  FR: { coords: "48.8584\u00b0 N, 2.2945\u00b0 E", country: "France" },
+  IT: { coords: "41.8902\u00b0 N, 12.4922\u00b0 E", country: "Italy" },
+  IN: { coords: "27.1751\u00b0 N, 78.0421\u00b0 E", country: "India" },
+  GB: { coords: "51.5014\u00b0 N, 0.1419\u00b0 W", country: "United Kingdom" },
+  DE: { coords: "52.5163\u00b0 N, 13.3777\u00b0 E", country: "Germany" },
+  SA: { coords: "21.4225\u00b0 N, 39.8262\u00b0 E", country: "Saudi Arabia" },
+};
+
+const DEFAULT_COORDS = { coords: "25.2048\u00b0 N, 55.2708\u00b0 E", country: "United Arab Emirates" };
+
+/* ------------------------------------------------------------------ */
+/*  Page Component                                                     */
+/* ------------------------------------------------------------------ */
 
 export default function CoordinatesRoom() {
   const router = useRouter();
-  const { addTokens, advanceRoom, getElapsedSeconds, startTime } = useGame();
+  const { addTokens, advanceRoom, getElapsedSeconds } = useGame();
   const [solved, setSolved] = useState(false);
   const [mapCoords, setMapCoords] = useState("");
   const [targetCountry, setTargetCountry] = useState("");
   const [roomStartTime] = useState(Date.now());
   const containerRef = useRef<HTMLDivElement>(null);
   const successRef = useRef<HTMLDivElement>(null);
-  const dotRef = useRef<HTMLDivElement>(null);
+
+  // Shuffle countries once on mount
+  const shuffledCountries = useMemo(
+    () => [...COUNTRY_OPTIONS].sort(() => Math.random() - 0.5),
+    []
+  );
 
   // Entry animation
   useEffect(() => {
@@ -65,19 +88,23 @@ export default function CoordinatesRoom() {
     }
   }, []);
 
-  const handleComplete = useCallback(
-    async (allCorrect: boolean) => {
-      if (!allCorrect) return;
+  const handleComplete = useCallback(async () => {
+    if (solved) return;
+    setSolved(true);
 
-      setSolved(true);
-      const timeSpent = Math.floor((Date.now() - roomStartTime) / 1000);
-      const tokensEarned = timeSpent < 120 ? 2 : 1;
+    const timeSpent = Math.floor((Date.now() - roomStartTime) / 1000);
+    const tokensEarned = timeSpent < 120 ? 2 : 1;
 
-      addTokens(tokensEarned);
-      setMapCoords("25.2048\u00b0 N, 55.2708\u00b0 E");
-      setTargetCountry("United Arab Emirates");
+    addTokens(tokensEarned);
 
-      // Map animation
+    // Resolve coordinates from user's registered country (fallback to AE)
+    const userCountryCode = "AE"; // Could be fetched from session/profile
+    const resolved = COORDS_MAP[userCountryCode] ?? DEFAULT_COORDS;
+    setMapCoords(resolved.coords);
+    setTargetCountry(resolved.country);
+
+    // Success animation
+    setTimeout(() => {
       if (successRef.current) {
         gsap.fromTo(
           successRef.current,
@@ -85,79 +112,109 @@ export default function CoordinatesRoom() {
           { opacity: 1, y: 0, duration: 0.8, ease: "power2.out" }
         );
       }
+    }, 100);
 
-      // Pulsing dot
-      if (dotRef.current) {
-        gsap.to(dotRef.current, {
-          scale: 1.5,
-          opacity: 0.5,
-          repeat: -1,
-          yoyo: true,
-          duration: 0.8,
-          ease: "sine.inOut",
-        });
+    // POST result
+    try {
+      await fetch("/api/game/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          room: "coordinates",
+          answer: "coordinates-matched",
+          timeSpentSec: timeSpent,
+          skipped: false,
+        }),
+      });
+    } catch {
+      // Silent fail
+    }
+
+    // Navigate based on remaining time
+    const totalElapsed = getElapsedSeconds();
+    const remaining = 600 - totalElapsed;
+
+    setTimeout(() => {
+      advanceRoom();
+      if (remaining > 60) {
+        router.push("/game/bonus");
+      } else {
+        router.push("/complete");
       }
+    }, 3500);
+  }, [solved, roomStartTime, addTokens, advanceRoom, getElapsedSeconds, router]);
 
-      // POST result
-      try {
-        await fetch("/api/game/submit", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            room: "coordinates",
-            answer: "coordinates-matched",
-            timeSpentSec: timeSpent,
-            skipped: false,
-          }),
-        });
-      } catch {
-        // Silent fail
-      }
+  const handleSkip = useCallback(async () => {
+    addTokens(-1);
 
-      // Check time remaining to decide route
-      const totalElapsed = getElapsedSeconds();
-      const remaining = 600 - totalElapsed;
+    const timeSpent = Math.floor((Date.now() - roomStartTime) / 1000);
 
-      setTimeout(() => {
-        advanceRoom();
-        if (remaining > 60) {
-          router.push("/game/bonus");
-        } else {
-          router.push("/complete");
-        }
-      }, 3500);
-    },
-    [roomStartTime, addTokens, advanceRoom, getElapsedSeconds, router]
-  );
+    try {
+      await fetch("/api/game/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          room: "coordinates",
+          answer: "skipped",
+          timeSpentSec: timeSpent,
+          skipped: true,
+        }),
+      });
+    } catch {
+      // Silent fail
+    }
+
+    advanceRoom();
+    const totalElapsed = getElapsedSeconds();
+    const remaining = 600 - totalElapsed;
+
+    if (remaining > 60) {
+      router.push("/game/bonus");
+    } else {
+      router.push("/complete");
+    }
+  }, [addTokens, roomStartTime, advanceRoom, getElapsedSeconds, router]);
 
   return (
     <div ref={containerRef} className="opacity-0">
       {/* Room Header */}
-      <div className="text-center mb-8">
+      <div className="text-center mb-6">
         <p className="text-xs font-mono uppercase tracking-[0.3em] text-mission-red mb-2">
-          Room 3 / 4
+          Room 3 / 4 — Coordinates Room
         </p>
         <h1 className="font-mono text-2xl sm:text-3xl uppercase tracking-widest text-mission-white mb-2">
           Coordinates Room
         </h1>
         <p className="text-sm text-mission-white/50 font-mono max-w-md mx-auto">
-          Match each visual intel to its country of origin to unlock the final coordinates.
+          Match each landmark to its country. Click a hint, then click the matching country.
         </p>
       </div>
 
-      {/* Puzzle */}
+      {/* 3D Puzzle */}
       {!solved && (
-        <CoordinatesMap
-          hints={HINTS.map(({ id, description, icon }) => ({ id, description, icon }))}
-          options={SHUFFLED_OPTIONS}
-          onComplete={handleComplete}
-        />
+        <>
+          <CoordinatesMap
+            hints={HINTS}
+            countries={shuffledCountries}
+            onComplete={handleComplete}
+          />
+
+          {/* Skip option */}
+          <div className="text-center mt-6">
+            <button
+              onClick={handleSkip}
+              className="text-xs font-mono text-mission-white/30 hover:text-mission-red-light transition-colors uppercase tracking-widest"
+            >
+              Skip Room (-1 Token)
+            </button>
+          </div>
+        </>
       )}
 
       {/* Success overlay */}
       {solved && (
         <div ref={successRef} className="text-center space-y-6 opacity-0">
-          {/* Map visualization */}
+          {/* Coordinate reveal */}
           <div className="relative bg-mission-grey border border-mission-grey-light p-8 max-w-md mx-auto">
             <div className="aspect-video relative overflow-hidden">
               {/* Grid lines for map effect */}
@@ -169,25 +226,20 @@ export default function CoordinatesRoom() {
 
               {/* Pulsing coordinate dot */}
               <div className="absolute top-[35%] left-[65%] flex items-center justify-center">
-                <div
-                  ref={dotRef}
-                  className="w-4 h-4 bg-mission-red rounded-full"
-                />
+                <div className="w-4 h-4 bg-mission-red rounded-full animate-pulse" />
                 <div className="absolute w-8 h-8 border border-mission-red/40 rounded-full animate-ping" />
               </div>
 
               {/* Coordinate label */}
               <div className="absolute bottom-2 left-2 bg-mission-black/80 px-3 py-1">
-                <p className="font-mono text-xs text-mission-red-light">
-                  {mapCoords}
-                </p>
+                <p className="font-mono text-xs text-mission-red-light">{mapCoords}</p>
               </div>
             </div>
           </div>
 
           <div className="inline-block bg-mission-green/10 border border-mission-green px-6 py-4">
             <p className="font-mono text-mission-green text-sm uppercase tracking-widest">
-              Coordinates Locked - Intel Token Earned
+              Coordinates Locked — Intel Token Earned
             </p>
           </div>
 
@@ -196,9 +248,7 @@ export default function CoordinatesRoom() {
             <span className="text-mission-red-light font-bold">{targetCountry}</span>.
           </p>
 
-          <p className="text-xs text-mission-white/40 font-mono">
-            Proceeding...
-          </p>
+          <p className="text-xs text-mission-white/40 font-mono">Proceeding...</p>
         </div>
       )}
     </div>
