@@ -24,17 +24,6 @@ export function middleware(request: NextRequest) {
     "127.0.0.1";
   response.headers.set("x-client-ip", ip);
 
-  // CORS for API routes (skip in development)
-  if (request.nextUrl.pathname.startsWith("/api/")) {
-    const origin = request.headers.get("origin") || "";
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
-    const isDev = process.env.NODE_ENV === "development";
-
-    if (!isDev && appUrl && origin && origin !== appUrl) {
-      return new NextResponse(null, { status: 403 });
-    }
-  }
-
   return response;
 }
 
